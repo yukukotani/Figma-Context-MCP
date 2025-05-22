@@ -4,6 +4,7 @@ import { FigmaService, type FigmaAuthOptions } from "./services/figma.js";
 import type { SimplifiedDesign } from "./services/simplify-node-response.js";
 import yaml from "js-yaml";
 import { Logger } from "./utils/logger.js";
+import { calcStringSize } from './utils/calc-string-size.js';
 
 const serverInfo = {
   name: "Figma MCP Server",
@@ -72,12 +73,20 @@ function registerTools(server: McpServer, figmaService: FigmaService): void {
           globalVars,
         };
 
-        Logger.log("Generating YAML result from file");
         const yamlResult = yaml.dump(result);
+        const yamlResultSize = calcStringSize(yamlResult);
 
+        const jsonResult = JSON.stringify(result);
+        const jsonResultSize = calcStringSize(jsonResult);
+
+        Logger.log(`Data size:
+          YAML: ${yamlResultSize} KB
+          JSON: ${jsonResultSize} KB
+        `);
+        
         Logger.log("Sending result to client");
         return {
-          content: [{ type: "text", text: yamlResult }],
+          content: [{ type: "text", text: jsonResult }],
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : JSON.stringify(error);
