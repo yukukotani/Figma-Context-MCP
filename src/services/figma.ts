@@ -189,6 +189,7 @@ export class FigmaService {
 }
 
 function writeJSON2YamlLogs(name: string, value: any) {
+  if (process.env.NODE_ENV !== "development") return;
   const result = yaml.dump(value);
   writeLogs(name, result);
 }

@@ -2,7 +2,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { FigmaService, type FigmaAuthOptions } from "./services/figma.js";
 import type { SimplifiedDesign } from "./services/simplify-node-response.js";
-import yaml from "js-yaml";
 import { Logger } from "./utils/logger.js";
 import { calcStringSize } from './utils/calc-string-size.js';
 
@@ -52,8 +51,7 @@ function registerTools(server: McpServer, figmaService: FigmaService): void {
     async ({ fileKey, nodeId, depth }) => {
       try {
         Logger.log(
-          `Fetching ${
-            depth ? `${depth} layers deep` : "all layers"
+          `Fetching ${depth ? `${depth} layers deep` : "all layers"
           } of ${nodeId ? `node ${nodeId} from file` : `full file`} ${fileKey}`,
         );
 
@@ -73,17 +71,11 @@ function registerTools(server: McpServer, figmaService: FigmaService): void {
           globalVars,
         };
 
-        const yamlResult = yaml.dump(result);
-        const yamlResultSize = calcStringSize(yamlResult);
-
         const jsonResult = JSON.stringify(result);
         const jsonResultSize = calcStringSize(jsonResult);
 
-        Logger.log(`Data size:
-          YAML: ${yamlResultSize} KB
-          JSON: ${jsonResultSize} KB
-        `);
-        
+        Logger.log(`Data size: ${jsonResultSize} KB `);
+
         Logger.log("Sending result to client");
         return {
           content: [{ type: "text", text: jsonResult }],
