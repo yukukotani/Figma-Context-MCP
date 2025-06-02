@@ -4,6 +4,7 @@ import { FigmaService, type FigmaAuthOptions } from "./services/figma.js";
 import type { SimplifiedDesign } from "./services/simplify-node-response.js";
 import { Logger } from "./utils/logger.js";
 import { calcStringSize } from './utils/calc-string-size.js';
+import yaml from 'js-yaml';
 
 const serverInfo = {
   name: "Figma MCP Server",
@@ -24,29 +25,114 @@ function createServer(
   return server;
 }
 
+const fileKeyDescription = "The key of the Figma file to fetch, often found in a provided URL like figma.com/(file|design)/<fileKey>/...";
+const nodeIdDescription = "The ID of the node to fetch, often found as URL parameter node-id=nodeId, always use if provided. If there are multiple node IDs that need to be obtained simultaneously, they can be combined and passed in with commas as separators.";
+const depthDescription = "Optional parameter, Controls how many levels deep to traverse the node tree";
+
+
 function registerTools(server: McpServer, figmaService: FigmaService): void {
-  // Tool to get file information
+
+  const sizeLimit = process.env.GET_NODE_SIZE_LIMIT ? parseInt(process.env.GET_NODE_SIZE_LIMIT) : undefined;
+
+  // Tool to get node size
   server.tool(
-    "get_figma_data",
-    "When the nodeId cannot be obtained, obtain the layout information about the entire Figma file",
+    "get_figma_data_size",
+    `Get the memory size of a figma data, return the nodeId and size in KB, e.g 
+- nodeId: '1234:5678'
+  size: 1024 KB
+
+Allow multiple nodeIds to be passed in at the same time.
+`,
     {
       fileKey: z
         .string()
-        .describe(
-          "The key of the Figma file to fetch, often found in a provided URL like figma.com/(file|design)/<fileKey>/...",
-        ),
+        .describe(fileKeyDescription),
       nodeId: z
         .string()
         .optional()
-        .describe(
-          "The ID of the node to fetch, often found as URL parameter node-id=<nodeId>, always use if provided",
-        ),
+        .describe(nodeIdDescription),
       depth: z
         .number()
         .optional()
-        .describe(
-          "OPTIONAL. Do NOT use unless explicitly requested by the user. Controls how many levels deep to traverse the node tree,",
-        ),
+        .describe(depthDescription),
+    },
+    async ({ fileKey, nodeId, depth }) => {
+      try {
+        Logger.log(`Getting size for ${nodeId ? `node ${nodeId}` : 'full file'} from file ${fileKey}`);
+
+        let file: SimplifiedDesign;
+        if (nodeId) {
+          file = await figmaService.getNode(fileKey, nodeId, depth);
+        } else {
+          file = await figmaService.getFile(fileKey, depth);
+        }
+
+        const { nodes, globalVars, ...metadata } = file;
+
+        const results = nodes.map((node) => {
+          const result = {
+            metadata,
+            nodes: [node],
+            // TODO: globalVars is not very accurate here
+            globalVars,
+          };
+          const yamlResult = yaml.dump(result)
+          const sizeInKB = calcStringSize(yamlResult);
+          return {
+            nodeId: node.id,
+            size: `${sizeInKB} KB`,
+          };
+        });
+
+        return {
+          content: [{ type: "text", text: yaml.dump(results) }],
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : JSON.stringify(error);
+        Logger.error(`Error getting node size for ${fileKey}:`, message);
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Error getting node size: ${message}` }],
+        };
+      }
+    },
+  );
+
+  const needLimitPrompt = sizeLimit && sizeLimit > 0;
+
+  // Tool to get file information
+  server.tool(
+    "get_figma_data",
+    `When the nodeId cannot be obtained, obtain the layout information about the entire Figma file.
+
+${needLimitPrompt ? `## Call Process:
+
+Goal: Read Figma data while respecting size limits by selectively fetching node details.
+  
+### Overall Strategy:
+  For any given Figma node (whether it's the initial node you're asked to fetch, or a child node encountered during recursion):
+  1.  **Determine Node Size**: Use the \`get_figma_data_size\` tool to get the size of the current node.
+  2.  **Apply Reading Strategy Based on Size**:
+      *   **If Node Size > ${sizeLimit} KB (Node Exceeds Limit):**
+          a.  Fetch the current node's data using \`get_figma_data\` with the \`depth: 1\` parameter. This retrieves the immediate properties of this node and a list of its direct child nodes (basic info only).
+          b.  For each child node obtained in step 2.a:
+              i.  **Recursively Process Child**: Treat this child node as a new current node and go back to Step 1 (Determine Node Size) to decide how to read it.
+      *   **If Node Size <= ${sizeLimit} KB (Node Within Limit):**
+          a.  Fetch the node's data using \`get_figma_data\` *without* specifying the \`depth\` parameter. This performs a full read of this node and all its descendants.
+` : ""}
+  `,
+    {
+      fileKey: z
+        .string()
+        .describe(fileKeyDescription),
+      nodeId: z
+        .string()
+        .optional()
+        .describe(nodeIdDescription),
+      depth: z
+        .number()
+        .optional()
+        .describe(depthDescription + ',Do NOT use unless explicitly requested.')
     },
     async ({ fileKey, nodeId, depth }) => {
       try {
@@ -71,14 +157,22 @@ function registerTools(server: McpServer, figmaService: FigmaService): void {
           globalVars,
         };
 
-        const jsonResult = JSON.stringify(result);
-        const jsonResultSize = calcStringSize(jsonResult);
+        const yamlResult = yaml.dump(result);
+        const yamlResultSize = calcStringSize(yamlResult);
 
-        Logger.log(`Data size: ${jsonResultSize} KB `);
+        Logger.log(`Data size: ${yamlResultSize} KB (YAML)`);
+
+        if (sizeLimit && yamlResultSize > sizeLimit) {
+          Logger.log(`Data size exceeds ${sizeLimit} KB, performing truncated reading`);
+          return {
+            isError: true,
+            content: [{ type: "text", text: `Data size exceeds ${sizeLimit} KB, performing truncated reading` }],
+          };
+        }
 
         Logger.log("Sending result to client");
         return {
-          content: [{ type: "text", text: jsonResult }],
+          content: [{ type: "text", text: yamlResult }],
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : JSON.stringify(error);
