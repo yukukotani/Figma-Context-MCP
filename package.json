@@ -1,6 +1,6 @@
 {
   "name": "figma-developer-mcp",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Model Context Protocol server for Figma integration",
   "type": "module",
   "main": "dist/index.js",
@@ -41,6 +41,7 @@
     "type": "git",
     "url": "git+https://github.com/GLips/Figma-Context-MCP.git"
   },
+  "homepage": "https://www.framelink.ai",
   "keywords": [
     "figma",
     "mcp",
