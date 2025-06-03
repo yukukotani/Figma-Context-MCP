@@ -37,11 +37,11 @@ function registerTools(server: McpServer, figmaService: FigmaService): void {
   // Tool to get node size
   server.tool(
     "get_figma_data_size",
-    `Get the memory size of a figma data, return the nodeId and size in KB, e.g 
+    `Obtain the memory size of a figma data, return the nodeId and size in KB, e.g 
 - nodeId: '1234:5678'
   size: 1024 KB
 
-Allow multiple nodeIds to be passed in at the same time.
+Allowed to pass in multiple node IDs to batch obtain the sizes of multiple nodes at one time.
 `,
     {
       fileKey: z
@@ -105,22 +105,30 @@ Allow multiple nodeIds to be passed in at the same time.
     "get_figma_data",
     `When the nodeId cannot be obtained, obtain the layout information about the entire Figma file.
 
-${needLimitPrompt ? `## Call Process:
+Allowed to pass in multiple node IDs to batch obtain data of multiple nodes at one time.
 
-Goal: Read Figma data while respecting size limits by selectively fetching node details.
-  
-### Overall Strategy:
-  For any given Figma node (whether it's the initial node you're asked to fetch, or a child node encountered during recursion):
-  1.  **Determine Node Size**: Use the \`get_figma_data_size\` tool to get the size of the current node.
-  2.  **Apply Reading Strategy Based on Size**:
-      *   **If Node Size > ${sizeLimit} KB (Node Exceeds Limit):**
-          a.  Fetch the current node's data using \`get_figma_data\` with the \`depth: 1\` parameter. This retrieves the immediate properties of this node and a list of its direct child nodes (basic info only).
-          b.  For each child node obtained in step 2.a:
-              i.  **Recursively Process Child**: Treat this child node as a new current node and go back to Step 1 (Determine Node Size) to decide how to read it.
-      *   **If Node Size <= ${sizeLimit} KB (Node Within Limit):**
-          a.  Fetch the node's data using \`get_figma_data\` *without* specifying the \`depth\` parameter. This performs a full read of this node and all its descendants.
+${needLimitPrompt ? `
+## Data Obtained Strategy
+
+For target Figma node (initial or recursive child), follow these steps:
+
+1. **Assess Node Data Size**
+    * Use \`get-figma-node-size\` tool to estimate current node size
+
+2. **Determine Method Based on Data Size**
+
+    * **Scenario 1: Node exceeds \`${sizeLimit}\` KB**
+      a. **Shallow Obtain**: Call \`get_figma_data\` with \`depth: 1\`
+        * Gets direct properties and immediate child nodes list only
+      b. **Process Children Recursively**: For each child, repeat from Step 1
+
+    * **Scenario 2: Node under \`${sizeLimit}\` KB**
+      a. **Full Obtain**: Call \`get_figma_data\` without depth parameter
+        * Gets complete data of current node and all descendants
+
+**Core Idea**: Uses "pruning" concept. For large nodes, get shallow info first, then process children individually. Avoids single large requests while ensuring all data is obtained.
 ` : ""}
-  `,
+        `,
     {
       fileKey: z
         .string()
