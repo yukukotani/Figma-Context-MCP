@@ -174,7 +174,7 @@ For target Figma node (initial or recursive child), follow these steps:
           Logger.log(`Data size exceeds ${sizeLimit} KB, performing truncated reading`);
           return {
             isError: true,
-            content: [{ type: "text", text: `Data size exceeds ${sizeLimit} KB, performing truncated reading` }],
+            content: [{ type: "text", text: `The data size of file ${fileKey} ${nodeId ? `node ${nodeId}` : ''} is ${yamlResultSize} KB, exceeded the limit of ${sizeLimit} KB, please performing truncated reading` }],
           };
         }
 
