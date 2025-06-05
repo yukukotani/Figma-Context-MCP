@@ -3,8 +3,8 @@ import { z } from "zod";
 import { FigmaService, type FigmaAuthOptions } from "./services/figma.js";
 import type { SimplifiedDesign } from "./services/simplify-node-response.js";
 import { Logger } from "./utils/logger.js";
-import { calcStringSize } from './utils/calc-string-size.js';
-import yaml from 'js-yaml';
+import { calcStringSize } from "./utils/calc-string-size.js";
+import yaml from "js-yaml";
 
 const serverInfo = {
   name: "Figma MCP Server",
@@ -25,14 +25,17 @@ function createServer(
   return server;
 }
 
-const fileKeyDescription = "The key of the Figma file to fetch, often found in a provided URL like figma.com/(file|design)/<fileKey>/...";
-const nodeIdDescription = "The ID of the node to fetch, often found as URL parameter node-id=nodeId, always use if provided. If there are multiple node IDs that need to be obtained simultaneously, they can be combined and passed in with commas as separators.";
-const depthDescription = "Optional parameter, Controls how many levels deep to traverse the node tree";
-
+const fileKeyDescription =
+  "The key of the Figma file to fetch, often found in a provided URL like figma.com/(file|design)/<fileKey>/...";
+const nodeIdDescription =
+  "The ID of the node to fetch, often found as URL parameter node-id=nodeId, always use if provided. If there are multiple node IDs that need to be obtained simultaneously, they can be combined and passed in with commas as separators.";
+const depthDescription =
+  "Optional parameter, Controls how many levels deep to traverse the node tree";
 
 function registerTools(server: McpServer, figmaService: FigmaService): void {
-
-  const sizeLimit = process.env.GET_NODE_SIZE_LIMIT ? parseInt(process.env.GET_NODE_SIZE_LIMIT) : undefined;
+  const sizeLimit = process.env.GET_NODE_SIZE_LIMIT
+    ? parseInt(process.env.GET_NODE_SIZE_LIMIT)
+    : undefined;
 
   // Tool to get node size
   server.tool(
@@ -44,21 +47,15 @@ function registerTools(server: McpServer, figmaService: FigmaService): void {
 Allowed to pass in multiple node IDs to batch obtain the sizes of multiple nodes at one time.
 `,
     {
-      fileKey: z
-        .string()
-        .describe(fileKeyDescription),
-      nodeId: z
-        .string()
-        .optional()
-        .describe(nodeIdDescription),
-      depth: z
-        .number()
-        .optional()
-        .describe(depthDescription),
+      fileKey: z.string().describe(fileKeyDescription),
+      nodeId: z.string().optional().describe(nodeIdDescription),
+      depth: z.number().optional().describe(depthDescription),
     },
     async ({ fileKey, nodeId, depth }) => {
       try {
-        Logger.log(`Getting size for ${nodeId ? `node ${nodeId}` : 'full file'} from file ${fileKey}`);
+        Logger.log(
+          `Getting size for ${nodeId ? `node ${nodeId}` : "full file"} from file ${fileKey}`,
+        );
 
         let file: SimplifiedDesign;
         if (nodeId) {
@@ -76,7 +73,7 @@ Allowed to pass in multiple node IDs to batch obtain the sizes of multiple nodes
             // TODO: globalVars is not very accurate here
             globalVars,
           };
-          const yamlResult = yaml.dump(result)
+          const yamlResult = yaml.dump(result);
           const sizeInKB = calcStringSize(yamlResult);
           return {
             nodeId: node.id,
@@ -107,45 +104,46 @@ Allowed to pass in multiple node IDs to batch obtain the sizes of multiple nodes
 
 Allowed to pass in multiple node IDs to batch obtain data of multiple nodes at one time.
 
-${needLimitPrompt ? `
-## Data Obtained Strategy
+${
+  needLimitPrompt
+    ? `
+## Figma Data Retrieval Strategy
 
-For target Figma node (initial or recursive child), follow these steps:
+**IMPORTANT: Work incrementally, not comprehensively.**
 
-1. **Assess Node Data Size**
-    * Use \`get-figma-node-size\` tool to estimate current node size
+### Core Principle
+Retrieve and implement ONE screen/component at a time. Don't try to understand the entire design upfront.
 
-2. **Determine Method Based on Data Size**
+### Process
+1. **Start Small**: Get shallow data (depth: 1) of the main node to see available screens/components
+2. **Pick One**: Choose a single screen to implement completely 
+3. **Get Full Data**: Retrieve complete data for that one screen only
+4. **Implement**: Build the HTML/CSS for that screen before moving on
+5. **Repeat**: Move to the next screen only after the current one is done
 
-    * **Scenario 1: Node exceeds \`${sizeLimit}\` KB**
-      a. **Shallow Obtain**: Call \`get_figma_data\` with \`depth: 1\`
-        * Gets direct properties and immediate child nodes list only
-      b. **Process Children Recursively**: For each child, repeat from Step 1
+### Data Size Guidelines
+- **Over ${sizeLimit}KB**: Use \`depth: 1\` to get structure only
+- **Under ${sizeLimit}KB**: Get full data without depth parameter
 
-    * **Scenario 2: Node under \`${sizeLimit}\` KB**
-      a. **Full Obtain**: Call \`get_figma_data\` without depth parameter
-        * Gets complete data of current node and all descendants
-
-**Core Idea**: Uses "pruning" concept. For large nodes, get shallow info first, then process children individually. Avoids single large requests while ensuring all data is obtained.
-` : ""}
+### Key Point
+**Don't analyze multiple screens in parallel.** Focus on implementing one complete, working screen at a time. This avoids context overload and produces better results.
+`
+    : ""
+}
         `,
     {
-      fileKey: z
-        .string()
-        .describe(fileKeyDescription),
-      nodeId: z
-        .string()
-        .optional()
-        .describe(nodeIdDescription),
+      fileKey: z.string().describe(fileKeyDescription),
+      nodeId: z.string().optional().describe(nodeIdDescription),
       depth: z
         .number()
         .optional()
-        .describe(depthDescription + ',Do NOT use unless explicitly requested.')
+        .describe(depthDescription + ",Do NOT use unless explicitly requested."),
     },
     async ({ fileKey, nodeId, depth }) => {
       try {
         Logger.log(
-          `Fetching ${depth ? `${depth} layers deep` : "all layers"
+          `Fetching ${
+            depth ? `${depth} layers deep` : "all layers"
           } of ${nodeId ? `node ${nodeId} from file` : `full file`} ${fileKey}`,
         );
 
@@ -174,7 +172,12 @@ For target Figma node (initial or recursive child), follow these steps:
           Logger.log(`Data size exceeds ${sizeLimit} KB, performing truncated reading`);
           return {
             isError: true,
-            content: [{ type: "text", text: `The data size of file ${fileKey} ${nodeId ? `node ${nodeId}` : ''} is ${yamlResultSize} KB, exceeded the limit of ${sizeLimit} KB, please performing truncated reading` }],
+            content: [
+              {
+                type: "text",
+                text: `The data size of file ${fileKey} ${nodeId ? `node ${nodeId}` : ""} is ${yamlResultSize} KB, exceeded the limit of ${sizeLimit} KB, please performing truncated reading`,
+              },
+            ],
           };
         }
 
