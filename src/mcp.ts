@@ -11,14 +11,19 @@ const serverInfo = {
   version: process.env.NPM_PACKAGE_VERSION ?? "unknown",
 };
 
+type CreateServerOptions = {
+  isHTTP?: boolean;
+  outputFormat?: "yaml" | "json";
+};
+
 function createServer(
   authOptions: FigmaAuthOptions,
-  { isHTTP = false }: { isHTTP?: boolean } = {},
+  { isHTTP = false, outputFormat = "yaml" }: CreateServerOptions = {},
 ) {
   const server = new McpServer(serverInfo);
   // const figmaService = new FigmaService(figmaApiKey);
   const figmaService = new FigmaService(authOptions);
-  registerTools(server, figmaService);
+  registerTools(server, figmaService, outputFormat);
 
   Logger.isHTTP = isHTTP;
 
@@ -32,7 +37,11 @@ const nodeIdDescription =
 const depthDescription =
   "Optional parameter, Controls how many levels deep to traverse the node tree";
 
-function registerTools(server: McpServer, figmaService: FigmaService): void {
+function registerTools(
+  server: McpServer,
+  figmaService: FigmaService,
+  outputFormat: "yaml" | "json",
+): void {
   const sizeLimit = process.env.GET_NODE_SIZE_LIMIT
     ? parseInt(process.env.GET_NODE_SIZE_LIMIT)
     : undefined;
@@ -96,7 +105,6 @@ Allowed to pass in multiple node IDs to batch obtain the sizes of multiple nodes
   );
 
   const needLimitPrompt = sizeLimit && sizeLimit > 0;
-
   // Tool to get file information
   server.tool(
     "get_figma_data",
@@ -163,19 +171,21 @@ Retrieve and implement ONE screen/component at a time. Don't try to understand t
           globalVars,
         };
 
-        const yamlResult = yaml.dump(result);
-        const yamlResultSize = calcStringSize(yamlResult);
+        Logger.log(`Generating ${outputFormat.toUpperCase()} result from file`);
+        const formattedResult =
+          outputFormat === "json" ? JSON.stringify(result, null, 2) : yaml.dump(result);
+        const formattedResultSize = calcStringSize(formattedResult);
 
-        Logger.log(`Data size: ${yamlResultSize} KB (YAML)`);
+        Logger.log(`Data size: ${formattedResultSize} KB (${outputFormat.toUpperCase()})`);
 
-        if (sizeLimit && yamlResultSize > sizeLimit) {
+        if (sizeLimit && formattedResultSize > sizeLimit) {
           Logger.log(`Data size exceeds ${sizeLimit} KB, performing truncated reading`);
           return {
             isError: true,
             content: [
               {
                 type: "text",
-                text: `The data size of file ${fileKey} ${nodeId ? `node ${nodeId}` : ""} is ${yamlResultSize} KB, exceeded the limit of ${sizeLimit} KB, please performing truncated reading`,
+                text: `The data size of file ${fileKey} ${nodeId ? `node ${nodeId}` : ""} is ${formattedResultSize} KB, exceeded the limit of ${sizeLimit} KB, please performing truncated reading`,
               },
             ],
           };
@@ -183,7 +193,7 @@ Retrieve and implement ONE screen/component at a time. Don't try to understand t
 
         Logger.log("Sending result to client");
         return {
-          content: [{ type: "text", text: yamlResult }],
+          content: [{ type: "text", text: formattedResult }],
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : JSON.stringify(error);
@@ -218,20 +228,42 @@ Retrieve and implement ONE screen/component at a time. Don't try to understand t
         })
         .array()
         .describe("The nodes to fetch as images"),
-      scale: z
+      pngScale: z
         .number()
         .positive()
         .optional()
+        .default(2)
         .describe(
-          "Export scale for PNG images. Optional, generally 2 is best, though users may specify a different scale.",
+          "Export scale for PNG images. Optional, defaults to 2 if not specified. Affects PNG images only.",
         ),
       localPath: z
         .string()
         .describe(
           "The absolute path to the directory where images are stored in the project. If the directory does not exist, it will be created. The format of this path should respect the directory format of the operating system you are running on. Don't use any special character escaping in the path name either.",
         ),
+      svgOptions: z
+        .object({
+          outlineText: z
+            .boolean()
+            .optional()
+            .default(true)
+            .describe("Whether to outline text in SVG exports. Default is true."),
+          includeId: z
+            .boolean()
+            .optional()
+            .default(false)
+            .describe("Whether to include IDs in SVG exports. Default is false."),
+          simplifyStroke: z
+            .boolean()
+            .optional()
+            .default(true)
+            .describe("Whether to simplify strokes in SVG exports. Default is true."),
+        })
+        .optional()
+        .default({})
+        .describe("Options for SVG export"),
     },
-    async ({ fileKey, nodes, scale, localPath }) => {
+    async ({ fileKey, nodes, localPath, svgOptions, pngScale }) => {
       try {
         const imageFills = nodes.filter(({ imageRef }) => !!imageRef) as {
           nodeId: string;
@@ -247,7 +279,13 @@ Retrieve and implement ONE screen/component at a time. Don't try to understand t
             fileType: fileName.endsWith(".svg") ? ("svg" as const) : ("png" as const),
           }));
 
-        const renderDownloads = figmaService.getImages(fileKey, renderRequests, localPath, scale);
+        const renderDownloads = figmaService.getImages(
+          fileKey,
+          renderRequests,
+          localPath,
+          pngScale,
+          svgOptions,
+        );
 
         const downloads = await Promise.all([fillDownloads, renderDownloads]).then(([f, r]) => [
           ...f,
