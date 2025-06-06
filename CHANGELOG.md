@@ -1,5 +1,11 @@
 # figma-developer-mcp
 
+## 0.5.0-beta.0
+
+### Minor Changes
+
+- [`6de0e05`](https://github.com/GLips/Figma-Context-MCP/commit/6de0e051037cee27836c2de97e429ef3ebcdb856) Thanks [@GLips](https://github.com/GLips)! - Allow the LLM to automatically prune and read large data.
+
 ## 0.4.1
 
 ### Patch Changes
