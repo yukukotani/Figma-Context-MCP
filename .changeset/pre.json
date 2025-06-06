@@ -1,0 +1,10 @@
+{
+  "mode": "pre",
+  "tag": "beta",
+  "initialVersions": {
+    "figma-developer-mcp": "0.4.1"
+  },
+  "changesets": [
+    "cyan-hats-train"
+  ]
+}
