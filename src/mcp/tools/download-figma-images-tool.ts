@@ -15,7 +15,29 @@ const parameters = {
         .describe(
           "If a node has an imageRef fill, you must include this variable. Leave blank when downloading Vector SVG images.",
         ),
-      fileName: z.string().describe("The local name for saving the fetched file"),
+      fileName: z
+        .string()
+        .describe(
+          "The local name for saving the fetched file, including extension. Either png or svg.",
+        ),
+      needsCropping: z
+        .boolean()
+        .optional()
+        .describe("Whether this image needs cropping based on its transform matrix"),
+      cropTransform: z
+        .array(z.array(z.number()))
+        .optional()
+        .describe("Figma transform matrix for image cropping"),
+      requiresImageDimensions: z
+        .boolean()
+        .optional()
+        .describe("Whether this image requires dimension information for CSS variables"),
+      filenameSuffix: z
+        .string()
+        .optional()
+        .describe(
+          "Suffix to add to filename for unique cropped images, provided in the Figma data (e.g., 'abc123')",
+        ),
     })
     .array()
     .describe("The nodes to fetch as images"),
@@ -32,63 +54,122 @@ const parameters = {
     .describe(
       "The absolute path to the directory where images are stored in the project. If the directory does not exist, it will be created. The format of this path should respect the directory format of the operating system you are running on. Don't use any special character escaping in the path name either.",
     ),
-  svgOptions: z
-    .object({
-      outlineText: z
-        .boolean()
-        .optional()
-        .default(true)
-        .describe("Whether to outline text in SVG exports. Default is true."),
-      includeId: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe("Whether to include IDs in SVG exports. Default is false."),
-      simplifyStroke: z
-        .boolean()
-        .optional()
-        .default(true)
-        .describe("Whether to simplify strokes in SVG exports. Default is true."),
-    })
-    .optional()
-    .default({})
-    .describe("Options for SVG export"),
 };
 
 const parametersSchema = z.object(parameters);
 export type DownloadImagesParams = z.infer<typeof parametersSchema>;
 
-// Simplified handler function
+// Enhanced handler function with image processing support
 async function downloadFigmaImages(params: DownloadImagesParams, figmaService: FigmaService) {
   try {
-    const { fileKey, nodes, localPath, svgOptions, pngScale = 2 } = params;
+    const { fileKey, nodes, localPath, pngScale = 2 } = params;
 
-    // Convert the tool's node format to the new unified format
-    const items = nodes.map((node) => {
+    // Deduplicate identical imageRefs without filenameSuffix to avoid redundant downloads
+    const deduplicatedItems: Array<{
+      imageRef?: string;
+      nodeId?: string;
+      fileName: string;
+      needsCropping: boolean;
+      cropTransform?: any;
+      requiresImageDimensions: boolean;
+    }> = [];
+    const imageRefMap = new Map<
+      string,
+      { canonicalFileName: string; requestedFileNames: string[] }
+    >();
+
+    nodes.forEach((node) => {
+      // Apply filename suffix if provided (for unique cropped images)
+      let finalFileName = node.fileName;
+      if (node.filenameSuffix && !node.fileName.includes(node.filenameSuffix)) {
+        const ext = finalFileName.split(".").pop();
+        const nameWithoutExt = finalFileName.substring(0, finalFileName.lastIndexOf("."));
+        finalFileName = `${nameWithoutExt}-${node.filenameSuffix}.${ext}`;
+      }
+
+      const baseItem = {
+        fileName: finalFileName,
+        needsCropping: node.needsCropping || false,
+        cropTransform: node.cropTransform,
+        requiresImageDimensions: node.requiresImageDimensions || false,
+      };
+
       if (node.imageRef) {
-        // Image fill
-        return { imageRef: node.imageRef, fileName: node.fileName };
+        // For image fills, check if we can deduplicate
+        const dedupeKey = `${node.imageRef}-${node.filenameSuffix || "none"}`;
+
+        if (!node.filenameSuffix && imageRefMap.has(dedupeKey)) {
+          // Same imageRef without suffix - add to requested filenames but don't download again
+          const existing = imageRefMap.get(dedupeKey)!;
+          existing.requestedFileNames.push(finalFileName);
+
+          // If ANY of the deduplicated items needs dimensions, update the download item
+          if (baseItem.requiresImageDimensions) {
+            const existingItemIndex = deduplicatedItems.findIndex(
+              (item) =>
+                item.imageRef === node.imageRef && item.fileName === existing.canonicalFileName,
+            );
+            if (existingItemIndex !== -1) {
+              deduplicatedItems[existingItemIndex].requiresImageDimensions = true;
+            }
+          }
+        } else {
+          // New unique image (either different imageRef or has filenameSuffix)
+          deduplicatedItems.push({ ...baseItem, imageRef: node.imageRef });
+          imageRefMap.set(dedupeKey, {
+            canonicalFileName: finalFileName,
+            requestedFileNames: [finalFileName],
+          });
+        }
       } else {
-        // Rendered node
-        return { nodeId: node.nodeId, fileName: node.fileName };
+        // Rendered nodes - always unique
+        deduplicatedItems.push({ ...baseItem, nodeId: node.nodeId });
       }
     });
 
+    const items = deduplicatedItems;
+
     const allDownloads = await figmaService.downloadImages(fileKey, localPath, items, {
       pngScale,
-      svgOptions,
     });
 
     const successCount = allDownloads.filter(Boolean).length;
+
+    // Format concise output focused on CSS generation needs
+    const imagesList = allDownloads
+      .map((result) => {
+        const fileName = result.filePath.split("/").pop() || result.filePath;
+        const dimensions = `${result.finalDimensions.width}x${result.finalDimensions.height}`;
+        const cropStatus = result.wasCropped ? " (cropped)" : "";
+
+        // For images with CSS variables, show them explicitly instead of just dimensions
+        let dimensionInfo = dimensions;
+        if (result.cssVariables) {
+          dimensionInfo = `${dimensions} | ${result.cssVariables}`;
+        }
+
+        // Check if this file was requested under multiple names (deduplication)
+        const matchingDedupeEntry = [...imageRefMap.values()].find(
+          (entry) => entry.canonicalFileName === fileName,
+        );
+
+        if (matchingDedupeEntry && matchingDedupeEntry.requestedFileNames.length > 1) {
+          const aliases = matchingDedupeEntry.requestedFileNames.filter(
+            (name) => name !== fileName,
+          );
+          const aliasText = aliases.length > 0 ? ` (also requested as: ${aliases.join(", ")})` : "";
+          return `- ${fileName}: ${dimensionInfo}${cropStatus}${aliasText}`;
+        }
+
+        return `- ${fileName}: ${dimensionInfo}${cropStatus}`;
+      })
+      .join("\n");
 
     return {
       content: [
         {
           type: "text" as const,
-          text:
-            successCount === allDownloads.length
-              ? `Successfully downloaded ${successCount} images`
-              : `Downloaded ${successCount}/${allDownloads.length} images (some failed)`,
+          text: `Downloaded ${successCount} images:\n${imagesList}`,
         },
       ],
     };
