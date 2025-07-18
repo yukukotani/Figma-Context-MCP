@@ -64,30 +64,21 @@ async function downloadFigmaImages(params: DownloadImagesParams, figmaService: F
   try {
     const { fileKey, nodes, localPath, pngScale = 2 } = params;
 
-    // Deduplicate identical imageRefs without filenameSuffix to avoid redundant downloads
-    const deduplicatedItems: Array<{
-      imageRef?: string;
-      nodeId?: string;
-      fileName: string;
-      needsCropping: boolean;
-      cropTransform?: any;
-      requiresImageDimensions: boolean;
-    }> = [];
-    const imageRefMap = new Map<
-      string,
-      { canonicalFileName: string; requestedFileNames: string[] }
-    >();
+    // Process nodes: collect unique downloads and track which requests they satisfy
+    const downloadItems = [];
+    const downloadToRequests = new Map<number, string[]>(); // download index -> requested filenames
+    const seenDownloads = new Map<string, number>(); // uniqueKey -> download index
 
-    nodes.forEach((node) => {
-      // Apply filename suffix if provided (for unique cropped images)
+    for (const node of nodes) {
+      // Apply filename suffix if provided
       let finalFileName = node.fileName;
-      if (node.filenameSuffix && !node.fileName.includes(node.filenameSuffix)) {
+      if (node.filenameSuffix && !finalFileName.includes(node.filenameSuffix)) {
         const ext = finalFileName.split(".").pop();
         const nameWithoutExt = finalFileName.substring(0, finalFileName.lastIndexOf("."));
         finalFileName = `${nameWithoutExt}-${node.filenameSuffix}.${ext}`;
       }
 
-      const baseItem = {
+      const downloadItem = {
         fileName: finalFileName,
         needsCropping: node.needsCropping || false,
         cropTransform: node.cropTransform,
@@ -95,73 +86,61 @@ async function downloadFigmaImages(params: DownloadImagesParams, figmaService: F
       };
 
       if (node.imageRef) {
-        // For image fills, check if we can deduplicate
-        const dedupeKey = `${node.imageRef}-${node.filenameSuffix || "none"}`;
+        // For imageRefs, check if we've already planned to download this
+        const uniqueKey = `${node.imageRef}-${node.filenameSuffix || "none"}`;
 
-        if (!node.filenameSuffix && imageRefMap.has(dedupeKey)) {
-          // Same imageRef without suffix - add to requested filenames but don't download again
-          const existing = imageRefMap.get(dedupeKey)!;
-          existing.requestedFileNames.push(finalFileName);
+        if (!node.filenameSuffix && seenDownloads.has(uniqueKey)) {
+          // Already planning to download this, just add to the requests list
+          const downloadIndex = seenDownloads.get(uniqueKey)!;
+          const requests = downloadToRequests.get(downloadIndex)!;
+          if (!requests.includes(finalFileName)) {
+            requests.push(finalFileName);
+          }
 
-          // If ANY of the deduplicated items needs dimensions, update the download item
-          if (baseItem.requiresImageDimensions) {
-            const existingItemIndex = deduplicatedItems.findIndex(
-              (item) =>
-                item.imageRef === node.imageRef && item.fileName === existing.canonicalFileName,
-            );
-            if (existingItemIndex !== -1) {
-              deduplicatedItems[existingItemIndex].requiresImageDimensions = true;
-            }
+          // Update requiresImageDimensions if needed
+          if (downloadItem.requiresImageDimensions) {
+            downloadItems[downloadIndex].requiresImageDimensions = true;
           }
         } else {
-          // New unique image (either different imageRef or has filenameSuffix)
-          deduplicatedItems.push({ ...baseItem, imageRef: node.imageRef });
-          imageRefMap.set(dedupeKey, {
-            canonicalFileName: finalFileName,
-            requestedFileNames: [finalFileName],
-          });
+          // New unique download
+          const downloadIndex = downloadItems.length;
+          downloadItems.push({ ...downloadItem, imageRef: node.imageRef });
+          downloadToRequests.set(downloadIndex, [finalFileName]);
+          seenDownloads.set(uniqueKey, downloadIndex);
         }
       } else {
-        // Rendered nodes - always unique
-        deduplicatedItems.push({ ...baseItem, nodeId: node.nodeId });
+        // Rendered nodes are always unique
+        const downloadIndex = downloadItems.length;
+        downloadItems.push({ ...downloadItem, nodeId: node.nodeId });
+        downloadToRequests.set(downloadIndex, [finalFileName]);
       }
-    });
+    }
 
-    const items = deduplicatedItems;
-
-    const allDownloads = await figmaService.downloadImages(fileKey, localPath, items, {
+    const allDownloads = await figmaService.downloadImages(fileKey, localPath, downloadItems, {
       pngScale,
     });
 
     const successCount = allDownloads.filter(Boolean).length;
 
-    // Format concise output focused on CSS generation needs
+    // Format results with aliases
     const imagesList = allDownloads
-      .map((result) => {
+      .map((result, index) => {
         const fileName = result.filePath.split("/").pop() || result.filePath;
         const dimensions = `${result.finalDimensions.width}x${result.finalDimensions.height}`;
         const cropStatus = result.wasCropped ? " (cropped)" : "";
 
-        // For images with CSS variables, show them explicitly instead of just dimensions
-        let dimensionInfo = dimensions;
-        if (result.cssVariables) {
-          dimensionInfo = `${dimensions} | ${result.cssVariables}`;
-        }
+        const dimensionInfo = result.cssVariables
+          ? `${dimensions} | ${result.cssVariables}`
+          : dimensions;
 
-        // Check if this file was requested under multiple names (deduplication)
-        const matchingDedupeEntry = [...imageRefMap.values()].find(
-          (entry) => entry.canonicalFileName === fileName,
-        );
+        // Show all the filenames that were requested for this download
+        const requestedNames = downloadToRequests.get(index) || [fileName];
+        const aliasText =
+          requestedNames.length > 1
+            ? ` (also requested as: ${requestedNames.filter((name: string) => name !== fileName).join(", ")})`
+            : "";
 
-        if (matchingDedupeEntry && matchingDedupeEntry.requestedFileNames.length > 1) {
-          const aliases = matchingDedupeEntry.requestedFileNames.filter(
-            (name) => name !== fileName,
-          );
-          const aliasText = aliases.length > 0 ? ` (also requested as: ${aliases.join(", ")})` : "";
-          return `- ${fileName}: ${dimensionInfo}${cropStatus}${aliasText}`;
-        }
-
-        return `- ${fileName}: ${dimensionInfo}${cropStatus}`;
+        return `- ${fileName}: ${dimensionInfo}${cropStatus}${aliasText}`;
       })
       .join("\n");
 
