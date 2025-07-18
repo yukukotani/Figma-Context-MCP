@@ -251,64 +251,6 @@ export function buildSimplifiedStrokes(
 }
 
 /**
- * Convert a Figma PatternPaint to a CSS-like pattern fill.
- *
- * Ignores `tileType` and `spacing` from the Figma API currently as there's
- * no great way to translate them to CSS.
- *
- * @param raw - The Figma PatternPaint to convert
- * @returns The converted pattern SimplifiedFill
- */
-function parsePatternPaint(
-  raw: Extract<Paint, { type: "PATTERN" }>,
-): Extract<SimplifiedFill, { type: "PATTERN" }> {
-  /**
-   * The only CSS-like repeat value supported by Figma is repeat.
-   *
-   * They also have hexagonal horizontal and vertical repeats, but
-   * those aren't easy to pull off in CSS, so we just use repeat.
-   */
-  let backgroundRepeat = "repeat";
-
-  let horizontal = "left";
-  switch (raw.horizontalAlignment) {
-    case "START":
-      horizontal = "left";
-      break;
-    case "CENTER":
-      horizontal = "center";
-      break;
-    case "END":
-      horizontal = "right";
-      break;
-  }
-
-  let vertical = "top";
-  switch (raw.verticalAlignment) {
-    case "START":
-      vertical = "top";
-      break;
-    case "CENTER":
-      vertical = "center";
-      break;
-    case "END":
-      vertical = "bottom";
-      break;
-  }
-
-  return {
-    type: raw.type,
-    patternSource: {
-      type: "IMAGE-PNG",
-      nodeId: raw.sourceNodeId,
-    },
-    backgroundRepeat,
-    backgroundSize: `${Math.round(raw.scalingFactor * 100)}%`,
-    backgroundPosition: `${horizontal} ${vertical}`,
-  };
-}
-
-/**
  * Convert a Figma paint (solid, image, gradient) to a SimplifiedFill
  * @param raw - The Figma paint to convert
  * @param hasChildren - Whether the node has children (determines CSS properties)
@@ -381,6 +323,64 @@ export function parsePaint(raw: Paint, hasChildren: boolean = false): Simplified
   } else {
     throw new Error(`Unknown paint type: ${raw.type}`);
   }
+}
+
+/**
+ * Convert a Figma PatternPaint to a CSS-like pattern fill.
+ *
+ * Ignores `tileType` and `spacing` from the Figma API currently as there's
+ * no great way to translate them to CSS.
+ *
+ * @param raw - The Figma PatternPaint to convert
+ * @returns The converted pattern SimplifiedFill
+ */
+function parsePatternPaint(
+  raw: Extract<Paint, { type: "PATTERN" }>,
+): Extract<SimplifiedFill, { type: "PATTERN" }> {
+  /**
+   * The only CSS-like repeat value supported by Figma is repeat.
+   *
+   * They also have hexagonal horizontal and vertical repeats, but
+   * those aren't easy to pull off in CSS, so we just use repeat.
+   */
+  let backgroundRepeat = "repeat";
+
+  let horizontal = "left";
+  switch (raw.horizontalAlignment) {
+    case "START":
+      horizontal = "left";
+      break;
+    case "CENTER":
+      horizontal = "center";
+      break;
+    case "END":
+      horizontal = "right";
+      break;
+  }
+
+  let vertical = "top";
+  switch (raw.verticalAlignment) {
+    case "START":
+      vertical = "top";
+      break;
+    case "CENTER":
+      vertical = "center";
+      break;
+    case "END":
+      vertical = "bottom";
+      break;
+  }
+
+  return {
+    type: raw.type,
+    patternSource: {
+      type: "IMAGE-PNG",
+      nodeId: raw.sourceNodeId,
+    },
+    backgroundRepeat,
+    backgroundSize: `${Math.round(raw.scalingFactor * 100)}%`,
+    backgroundPosition: `${horizontal} ${vertical}`,
+  };
 }
 
 /**
