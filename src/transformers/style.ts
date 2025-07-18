@@ -71,11 +71,7 @@ export type SimplifiedImageFill = {
 
 export type SimplifiedGradientFill = {
   type: "GRADIENT_LINEAR" | "GRADIENT_RADIAL" | "GRADIENT_ANGULAR" | "GRADIENT_DIAMOND";
-  gradientHandlePositions?: Vector[];
-  gradientStops?: {
-    position: number;
-    color: ColorValue | string;
-  }[];
+  gradient: string;
 };
 
 export type SimplifiedPatternFill = {
@@ -314,11 +310,7 @@ export function parsePaint(raw: Paint, hasChildren: boolean = false): Simplified
         | "GRADIENT_RADIAL"
         | "GRADIENT_ANGULAR"
         | "GRADIENT_DIAMOND",
-      gradientHandlePositions: raw.gradientHandlePositions,
-      gradientStops: raw.gradientStops.map(({ position, color }) => ({
-        position,
-        color: convertColor(color),
-      })),
+      gradient: convertGradientToCss(raw),
     };
   } else {
     throw new Error(`Unknown paint type: ${raw.type}`);
@@ -445,4 +437,60 @@ export function formatRGBAColor(color: RGBA, opacity = 1): CSSRGBAColor {
   const a = Math.round(opacity * color.a * 100) / 100;
 
   return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
+/**
+ * Convert a Figma gradient to CSS gradient syntax
+ */
+function convertGradientToCss(gradient: Extract<Paint, { type: "GRADIENT_LINEAR" | "GRADIENT_RADIAL" | "GRADIENT_ANGULAR" | "GRADIENT_DIAMOND" }>): string {
+  const stops = gradient.gradientStops
+    .map(({ position, color }) => {
+      const cssColor = formatRGBAColor(color, 1);
+      return `${cssColor} ${Math.round(position * 100)}%`;
+    })
+    .join(", ");
+
+  const handles = gradient.gradientHandlePositions;
+  if (!handles || handles.length < 2) {
+    return `linear-gradient(0deg, ${stops})`;
+  }
+
+  switch (gradient.type) {
+    case "GRADIENT_LINEAR": {
+      // Calculate angle from start to end point
+      const start = handles[0];
+      const end = handles[1];
+      const angle = Math.atan2(end.y - start.y, end.x - start.x) * (180 / Math.PI) + 90;
+      return `linear-gradient(${Math.round(angle)}deg, ${stops})`;
+    }
+    
+    case "GRADIENT_RADIAL": {
+      // Use center point and create radial gradient
+      const center = handles[0];
+      const centerX = Math.round(center.x * 100);
+      const centerY = Math.round(center.y * 100);
+      return `radial-gradient(circle at ${centerX}% ${centerY}%, ${stops})`;
+    }
+    
+    case "GRADIENT_ANGULAR": {
+      // Convert to conic gradient
+      const center = handles[0];
+      const end = handles[1];
+      const angle = Math.atan2(end.y - center.y, end.x - center.x) * (180 / Math.PI) + 90;
+      const centerX = Math.round(center.x * 100);
+      const centerY = Math.round(center.y * 100);
+      return `conic-gradient(from ${Math.round(angle)}deg at ${centerX}% ${centerY}%, ${stops})`;
+    }
+    
+    case "GRADIENT_DIAMOND": {
+      // CSS doesn't have diamond gradients, approximate with radial
+      const center = handles[0];
+      const centerX = Math.round(center.x * 100);
+      const centerY = Math.round(center.y * 100);
+      return `radial-gradient(ellipse at ${centerX}% ${centerY}%, ${stops})`;
+    }
+    
+    default:
+      return `linear-gradient(0deg, ${stops})`;
+  }
 }
