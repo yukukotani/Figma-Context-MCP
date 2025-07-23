@@ -4,6 +4,7 @@ import { Logger } from "../utils/logger.js";
 import {
   downloadFigmaImagesTool,
   getFigmaDataTool,
+  getTasksTool,
   type DownloadImagesParams,
   type GetFigmaDataParams,
 } from "./tools/index.js";
@@ -58,6 +59,14 @@ function registerTools(
       (params: DownloadImagesParams) => downloadFigmaImagesTool.handler(params, figmaService),
     );
   }
+
+  // Register get_tasks tool
+  server.tool(
+    getTasksTool.name,
+    getTasksTool.description,
+    getTasksTool.parameters,
+    getTasksTool.handler,
+  );
 }
 
 export { createServer };
