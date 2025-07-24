@@ -3,9 +3,15 @@ import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import { resolve } from "path";
 import type { FigmaAuthOptions } from "./services/figma.js";
+import type { FramelinkAuthOptions } from "./services/framelink.js";
+
+export type AuthOptions = {
+  figma: FigmaAuthOptions;
+  framelink: FramelinkAuthOptions;
+};
 
 interface ServerConfig {
-  auth: FigmaAuthOptions;
+  auth: AuthOptions;
   port: number;
   outputFormat: "yaml" | "json";
   skipImageDownloads?: boolean;
@@ -16,6 +22,8 @@ interface ServerConfig {
     outputFormat: "cli" | "env" | "default";
     envFile: "cli" | "default";
     skipImageDownloads?: "cli" | "env" | "default";
+    framelinkAccessToken?: "cli" | "env" | "default";
+    framelinkBaseUrl?: "cli" | "env" | "default";
   };
 }
 
@@ -27,6 +35,8 @@ function maskApiKey(key: string): string {
 interface CliArgs {
   "figma-api-key"?: string;
   "figma-oauth-token"?: string;
+  "framelink-access-token"?: string;
+  "framelink-base-url"?: string;
   env?: string;
   port?: number;
   json?: boolean;
@@ -63,6 +73,14 @@ export function getServerConfig(isStdioMode: boolean): ServerConfig {
         description: "Do not register the download_figma_images tool (skip image downloads)",
         default: false,
       },
+      "framelink-access-token": {
+        type: "string",
+        description: "Framelink access token",
+      },
+      "framelink-base-url": {
+        type: "string",
+        description: "Framelink base URL",
+      },
     })
     .help()
     .version(process.env.NPM_PACKAGE_VERSION ?? "unknown")
@@ -83,10 +101,15 @@ export function getServerConfig(isStdioMode: boolean): ServerConfig {
   // Override anything auto-loaded from .env if a custom file is provided.
   loadEnv({ path: envFilePath, override: true });
 
-  const auth: FigmaAuthOptions = {
-    figmaApiKey: "",
-    figmaOAuthToken: "",
-    useOAuth: false,
+  const auth: AuthOptions = {
+    figma: {
+      apiKey: "",
+      oauthToken: "",
+      useOAuth: false,
+    },
+    framelink: {
+      active: false,
+    },
   };
 
   const config: Omit<ServerConfig, "auth"> = {
@@ -105,22 +128,22 @@ export function getServerConfig(isStdioMode: boolean): ServerConfig {
 
   // Handle FIGMA_API_KEY
   if (argv["figma-api-key"]) {
-    auth.figmaApiKey = argv["figma-api-key"];
+    auth.figma.apiKey = argv["figma-api-key"];
     config.configSources.figmaApiKey = "cli";
   } else if (process.env.FIGMA_API_KEY) {
-    auth.figmaApiKey = process.env.FIGMA_API_KEY;
+    auth.figma.apiKey = process.env.FIGMA_API_KEY;
     config.configSources.figmaApiKey = "env";
   }
 
   // Handle FIGMA_OAUTH_TOKEN
   if (argv["figma-oauth-token"]) {
-    auth.figmaOAuthToken = argv["figma-oauth-token"];
+    auth.figma.oauthToken = argv["figma-oauth-token"];
     config.configSources.figmaOAuthToken = "cli";
-    auth.useOAuth = true;
+    auth.figma.useOAuth = true;
   } else if (process.env.FIGMA_OAUTH_TOKEN) {
-    auth.figmaOAuthToken = process.env.FIGMA_OAUTH_TOKEN;
+    auth.figma.oauthToken = process.env.FIGMA_OAUTH_TOKEN;
     config.configSources.figmaOAuthToken = "env";
-    auth.useOAuth = true;
+    auth.figma.useOAuth = true;
   }
 
   // Handle PORT
@@ -150,8 +173,28 @@ export function getServerConfig(isStdioMode: boolean): ServerConfig {
     config.configSources.skipImageDownloads = "env";
   }
 
+  // Handle framelinkAccessToken
+  if (argv["framelink-access-token"]) {
+    auth.framelink.active = true;
+    auth.framelink.accessToken = argv["framelink-access-token"];
+    config.configSources.framelinkAccessToken = "cli";
+  } else if (process.env.FRAMELINK_ACCESS_TOKEN) {
+    auth.framelink.active = true;
+    auth.framelink.accessToken = process.env.FRAMELINK_ACCESS_TOKEN;
+    config.configSources.framelinkAccessToken = "env";
+  }
+
+  // Handle framelinkBaseUrl
+  if (argv["framelink-base-url"]) {
+    auth.framelink.baseUrl = argv["framelink-base-url"];
+    config.configSources.framelinkBaseUrl = "cli";
+  } else if (process.env.FRAMELINK_BASE_URL) {
+    auth.framelink.baseUrl = process.env.FRAMELINK_BASE_URL;
+    config.configSources.framelinkBaseUrl = "env";
+  }
+
   // Validate configuration
-  if (!auth.figmaApiKey && !auth.figmaOAuthToken) {
+  if (!auth.figma.apiKey && !auth.figma.oauthToken) {
     console.error(
       "Either FIGMA_API_KEY or FIGMA_OAUTH_TOKEN is required (via CLI argument or .env file)",
     );
@@ -162,14 +205,14 @@ export function getServerConfig(isStdioMode: boolean): ServerConfig {
   if (!isStdioMode) {
     console.log("\nConfiguration:");
     console.log(`- ENV_FILE: ${envFilePath} (source: ${config.configSources.envFile})`);
-    if (auth.useOAuth) {
+    if (auth.figma.useOAuth) {
       console.log(
-        `- FIGMA_OAUTH_TOKEN: ${maskApiKey(auth.figmaOAuthToken)} (source: ${config.configSources.figmaOAuthToken})`,
+        `- FIGMA_OAUTH_TOKEN: ${maskApiKey(auth.figma.oauthToken)} (source: ${config.configSources.figmaOAuthToken})`,
       );
       console.log("- Authentication Method: OAuth Bearer Token");
     } else {
       console.log(
-        `- FIGMA_API_KEY: ${maskApiKey(auth.figmaApiKey)} (source: ${config.configSources.figmaApiKey})`,
+        `- FIGMA_API_KEY: ${maskApiKey(auth.figma.apiKey)} (source: ${config.configSources.figmaApiKey})`,
       );
       console.log("- Authentication Method: Personal Access Token (X-Figma-Token)");
     }
@@ -180,6 +223,16 @@ export function getServerConfig(isStdioMode: boolean): ServerConfig {
     console.log(
       `- SKIP_IMAGE_DOWNLOADS: ${config.skipImageDownloads} (source: ${config.configSources.skipImageDownloads})`,
     );
+    if (auth.framelink.accessToken) {
+      console.log(
+        `- FRAMELINK_ACCESS_TOKEN: ${maskApiKey(auth.framelink.accessToken)} (source: ${config.configSources.framelinkAccessToken})`,
+      );
+    }
+    if (auth.framelink.baseUrl) {
+      console.log(
+        `- FRAMELINK_BASE_URL: ${auth.framelink.baseUrl} (source: ${config.configSources.framelinkBaseUrl})`,
+      );
+    }
     console.log(); // Empty line for better readability
   }
 

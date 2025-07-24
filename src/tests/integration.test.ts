@@ -26,9 +26,14 @@ describe("Figma MCP Server Tests", () => {
     }
 
     server = createServer({
-      figmaApiKey,
-      figmaOAuthToken: "",
-      useOAuth: false,
+      figma: {
+        apiKey: figmaApiKey,
+        oauthToken: "",
+        useOAuth: false,
+      },
+      framelink: {
+        accessToken: "",
+      },
     });
 
     client = new Client(

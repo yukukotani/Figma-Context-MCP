@@ -4,14 +4,13 @@ import type {
   GetFileNodesResponse,
   GetImageFillsResponse,
 } from "@figma/rest-api-spec";
-import { downloadFigmaImage } from "~/utils/common.js";
 import { downloadAndProcessImage, type ImageProcessingResult } from "~/utils/image-processing.js";
 import { Logger, writeLogs } from "~/utils/logger.js";
 import { fetchWithRetry } from "~/utils/fetch-with-retry.js";
 
 export type FigmaAuthOptions = {
-  figmaApiKey: string;
-  figmaOAuthToken: string;
+  apiKey: string;
+  oauthToken: string;
   useOAuth: boolean;
 };
 
@@ -27,9 +26,9 @@ export class FigmaService {
   private readonly useOAuth: boolean;
   private readonly baseUrl = "https://api.figma.com/v1";
 
-  constructor({ figmaApiKey, figmaOAuthToken, useOAuth }: FigmaAuthOptions) {
-    this.apiKey = figmaApiKey || "";
-    this.oauthToken = figmaOAuthToken || "";
+  constructor({ apiKey, oauthToken, useOAuth }: FigmaAuthOptions) {
+    this.apiKey = apiKey || "";
+    this.oauthToken = oauthToken || "";
     this.useOAuth = !!useOAuth && !!this.oauthToken;
   }
 

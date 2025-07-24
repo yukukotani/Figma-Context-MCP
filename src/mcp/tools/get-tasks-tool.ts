@@ -1,22 +1,22 @@
 import { z } from "zod";
-import { apiCallWrapper, type ToolResult } from "~/utils/api-call-wrapper.js";
+import { FramelinkService, type ToolResult } from "~/services/framelink.js";
 
 const parameters = {
-  projectCode: z.string(),
+  projectCode: z
+    .string()
+    .describe(`The 2 to 5 letter code of the project to get tasks for, e.g. "FRA"`),
 };
 
 const parametersSchema = z.object(parameters);
 export type GetTasksParams = z.infer<typeof parametersSchema>;
 
-async function getTasksHandler(params: GetTasksParams): Promise<ToolResult> {
-  return await apiCallWrapper(
-    `http://localhost:3000/mcp-api/v1/tasks?projectCode=${params.projectCode}`,
-    {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    },
+async function getTasksHandler(
+  { projectCode }: GetTasksParams,
+  framelinkService: FramelinkService,
+): Promise<ToolResult> {
+  return await framelinkService.request(
+    `/tasks?projectCode=${projectCode}`,
+    { method: "GET" },
     (data) => {
       return {
         content: [{ type: "text" as const, text: JSON.stringify(data) }],
@@ -27,7 +27,7 @@ async function getTasksHandler(params: GetTasksParams): Promise<ToolResult> {
 
 export const getTasksTool = {
   name: "get_tasks",
-  description: "Call the get-tasks endpoint at localhost:3000",
+  description: "Get all tasks for a Framelink project",
   parameters,
   handler: getTasksHandler,
 } as const;
