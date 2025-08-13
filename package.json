@@ -20,7 +20,7 @@
     "start:http": "node dist/cli.js",
     "dev": "cross-env NODE_ENV=development tsup --watch",
     "dev:cli": "cross-env NODE_ENV=development tsup --watch -- --stdio",
-    "lint": "eslint . --ext .ts",
+    "lint": "eslint .",
     "format": "prettier --write \"src/**/*.ts\"",
     "inspect": "pnpx @modelcontextprotocol/inspector",
     "prepack": "pnpm build",
@@ -67,6 +67,7 @@
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.1",
     "@changesets/cli": "^2.29.2",
+    "@eslint/js": "^9.33.0",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
     "@types/js-yaml": "^4.0.9",
