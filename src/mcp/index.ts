@@ -6,10 +6,14 @@ import {
   getFigmaDataTool,
   getTasksTool,
   getTaskTool,
+  createTasksTool,
+  updateTaskTool,
   type DownloadImagesParams,
   type GetFigmaDataParams,
   type GetTaskParams,
   type GetTasksParams,
+  type CreateTasksParams,
+  type UpdateTaskParams,
 } from "./tools/index.js";
 import type { AuthOptions } from "~/config.js";
 import { FramelinkService } from "~/services/framelink.js";
@@ -83,6 +87,22 @@ function registerTools(
       getTaskTool.description,
       getTaskTool.parameters,
       (params: GetTaskParams) => getTaskTool.handler(params, framelink),
+    );
+
+    // Register create_tasks tool
+    server.tool(
+      createTasksTool.name,
+      createTasksTool.description,
+      createTasksTool.parameters,
+      (params: CreateTasksParams) => createTasksTool.handler(params, framelink),
+    );
+
+    // Register update_task tool
+    server.tool(
+      updateTaskTool.name,
+      updateTaskTool.description,
+      updateTaskTool.parameters,
+      (params: UpdateTaskParams) => updateTaskTool.handler(params, framelink),
     );
   }
 }

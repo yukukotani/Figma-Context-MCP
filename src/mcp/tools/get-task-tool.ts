@@ -12,7 +12,7 @@ async function getTaskHandler(
   { taskCode }: GetTaskParams,
   framelinkService: FramelinkService,
 ): Promise<ToolResult> {
-  return await framelinkService.request(`/tasks/${taskCode}`, { method: "GET" }, (data) => {
+  return await framelinkService.request(`/tasks/${taskCode}`, { method: "GET" }, async (data) => {
     return {
       content: [{ type: "text" as const, text: JSON.stringify(data) }],
     };

@@ -38,7 +38,7 @@ export class FramelinkService {
      */
     endpoint: string,
     options: RequestInit,
-    callback: (data: T) => ToolResult,
+    callback: (data: T) => Promise<ToolResult>,
   ): Promise<ToolResult> {
     try {
       const url = `${this.baseUrl}${endpoint}`;

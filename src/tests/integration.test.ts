@@ -33,6 +33,7 @@ describe("Figma MCP Server Tests", () => {
       },
       framelink: {
         accessToken: "",
+        active: false,
       },
     });
 

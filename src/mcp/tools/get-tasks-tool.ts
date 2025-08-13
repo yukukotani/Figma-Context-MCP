@@ -17,7 +17,7 @@ async function getTasksHandler(
   return await framelinkService.request(
     `/tasks?projectCode=${projectCode}`,
     { method: "GET" },
-    (data) => {
+    async (data) => {
       return {
         content: [{ type: "text" as const, text: JSON.stringify(data) }],
       };
