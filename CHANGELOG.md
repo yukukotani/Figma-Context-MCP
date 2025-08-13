@@ -1,5 +1,11 @@
 # figma-developer-mcp
 
+## 0.5.1
+
+### Patch Changes
+
+- [#205](https://github.com/GLips/Figma-Context-MCP/pull/205) [`618bbe9`](https://github.com/GLips/Figma-Context-MCP/commit/618bbe98c49428e617de0240f0e9c2842867ae9b) Thanks [@GLips](https://github.com/GLips)! - Calculate gradient values instead of passing raw Figma data.
+
 ## 0.5.0
 
 ### Minor Changes
