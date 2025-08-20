@@ -27,30 +27,7 @@ export async function startHttpServer(port: number, mcpServer: McpServer): Promi
   app.post("/mcp", async (req, res) => {
     Logger.log("Received StreamableHTTP request");
 
-    let progressInterval: NodeJS.Timeout | null = null;
-    const progressToken = req.body.params?._meta?.progressToken;
-    let progress = 0;
-    if (progressToken) {
-      Logger.log(`Setting up progress notifications for token ${progressToken}`);
-      progressInterval = setInterval(async () => {
-        Logger.log("Sending progress notification", progress);
-        await mcpServer.server.notification({
-          method: "notifications/progress",
-          params: {
-            progress,
-            progressToken,
-          },
-        });
-        progress++;
-      }, 1000);
-    }
-
-    Logger.log("Handling StreamableHTTP request");
     await streamableHttpTransport.handleRequest(req, res, req.body);
-
-    if (progressInterval) {
-      clearInterval(progressInterval);
-    }
 
     Logger.log("StreamableHTTP request handled");
   });
